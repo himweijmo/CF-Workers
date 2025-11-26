@@ -6,38 +6,48 @@ export class SessionObject {
   async fetch(request) {
     const url = new URL(request.url);
     const target = url.searchParams.get("url");
-    if (!target) return new Response("Missing ?url=", { status: 400 });
 
-    // 读取旧 Cookies
-    let cookie = await this.state.storage.get("cookie") || "";
+    if (!target) {
+      return new Response("Missing ?url=", { status: 400 });
+    }
 
+    // 读取会话 Cookie
+    let savedCookie = await this.state.storage.get("cookie") || "";
+
+    // 构建请求
     let init = {
       method: request.method,
       headers: new Headers(request.headers),
       body: request.body,
+      redirect: "follow"
     };
 
     // 覆盖 Cookie
-    if (cookie) {
-      init.headers.set("cookie", cookie);
+    if (savedCookie) {
+      init.headers.set("cookie", savedCookie);
     }
 
-    // 不要把 Cloudflare headers 转发出去
+    // 删除可能暴露真实 IP 的 headers
     init.headers.delete("cf-connecting-ip");
     init.headers.delete("x-forwarded-for");
     init.headers.delete("x-real-ip");
 
-    let resp = await fetch(target, init);
+    // 不要把 worker 的 host 转发出去
+    init.headers.delete("host");
 
-    // 自动更新 Set-Cookie
-    let setCookie = resp.headers.get("set-cookie");
+    // 真正发起请求
+    let response = await fetch(target, init);
+
+    // 处理 Set-Cookie
+    let setCookie = response.headers.get("set-cookie");
     if (setCookie) {
       await this.state.storage.put("cookie", setCookie);
     }
 
-    return new Response(resp.body, {
-      status: resp.status,
-      headers: resp.headers
+    // 返回响应（保留所有 headers）
+    return new Response(response.body, {
+      status: response.status,
+      headers: response.headers
     });
   }
 }
@@ -51,10 +61,10 @@ export default {
       return new Response("Missing ?session=", { status: 400 });
     }
 
-    // 获取对应会话
+    // 获取 DO 实例
     let id = env.SESSIONS.idFromName(sessionId);
-    let obj = env.SESSIONS.get(id);
+    let session = env.SESSIONS.get(id);
 
-    return obj.fetch(request);
+    return session.fetch(request);
   }
 };
