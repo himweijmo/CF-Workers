@@ -31,10 +31,6 @@ export class SessionObject {
       headers.set("cookie", cookies);
     }
 
-    // Random IPv6 spoofing
-    const fakeIp = generateIPv6();
-    headers.set("X-Forwarded-For", fakeIp);
-    headers.set("X-Real-IP", fakeIp);
 
     // Forward request
     const newReq = new Request(targetUrl, {
